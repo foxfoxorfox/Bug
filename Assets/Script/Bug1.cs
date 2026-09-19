@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine; 
  
 public class Bug1 : MonoBehaviour 
@@ -7,34 +8,28 @@ public class Bug1 : MonoBehaviour
     public float speed = 5f; 
  
     [Header("Wall Following")] 
-    public float wallDistance = 0.2f; 
+    public float wallDistance = 0.25f; 
     public float rayDistance = 1.0f; 
     public float wallFollowSpeed = 5f; 
- 
+    // ========================================
     private enum State 
-    { 
+    {
+        Stop,
         MoveToGoal, 
         FollowWall, 
         ToWallBestPoint 
     } 
  
     private State state = State.MoveToGoal; 
- 
-    private Collider obstacle;//충돌 대상
+    // ========================================
+    private readonly List<Collider> obstacles = new List<Collider>();
     private Vector3 ContactPoint;//충돌 위치
     private Vector3 bestPoint;//이탈 지점
- 
-    // 목표와 bestPoint 사이의 거리 
     private float bestDistance; 
  
-    // 외벽을 얼마나 돌았는지 판단하기 위한 누적 거리 
-    private float wallTravelDistance; 
- 
-    // 충돌 지점에서 외벽을 따라 이동하기 시작한 방향 
-    private Vector3 initialTangent;
- 
-    // 처음 충돌한 위치로부터 얼마나 가까워졌는지 
-    private float returnDistance = 0.3f; 
+    private float wallTravelDistance;//충돌 지점 도착 판정
+    private Vector3 initialTangent;//충돌 지점에서 시계방향
+    private float returnDistance = 0.25f;//충돌 지점까지 거리 조건
 
     void Start() 
     { 
@@ -51,17 +46,17 @@ public class Bug1 : MonoBehaviour
  
         switch (state) 
         { 
+            case State.Stop:
+                break;
             case State.MoveToGoal: 
                 MoveToGoal(); 
                 break; 
- 
             case State.FollowWall: 
                 FollowWall(); 
-                break; 
- 
+                break;
             case State.ToWallBestPoint: 
                 ToWallBestPoint(); 
-                break; 
+                break;
         } 
     } 
  
@@ -85,178 +80,121 @@ public class Bug1 : MonoBehaviour
  
     void FollowWall() 
     { 
-        if (obstacle == null) 
+        if (!HasObstacles()) 
         { 
             state = State.MoveToGoal; 
             return; 
         } 
- 
+        //현재 위치
         Vector3 currentPosition = transform.position; 
         currentPosition.y = 0f; 
- 
-        // -------------------------------------------------------- 
-        // 현재 위치에서 장애물의 가장 가까운 표면을 찾는다. 
-        // -------------------------------------------------------- 
- 
-        Vector3 closestPoint =  obstacle.ClosestPoint(currentPosition); 
- 
+        //다음 예상 위치
+        Vector3 closestPoint = ClosestObstaclePoint(currentPosition); 
         closestPoint.y = 0f; 
- 
- 
-        // -------------------------------------------------------- 
-        // 장애물 표면에서 바깥쪽으로 향하는 방향 
-        // -------------------------------------------------------- 
- 
-        Vector3 normal = currentPosition - closestPoint; 
- 
-        normal.y = 0f; 
- 
-        if (normal.sqrMagnitude < 0.0001f) 
-        { 
-            // 너무 가까우면 임시 방향 
-            normal = Vector3.right; 
-        } 
- 
+        //다음 위치로 향하는 벡터
+        Vector3 normal = currentPosition - closestPoint;
+        normal.y = 0f;
+        // 너무 가까우면 임시 방향 
+        if (normal.sqrMagnitude < 0.0001f){normal = Vector3.right;} 
         normal.Normalize(); 
- 
- 
-        // -------------------------------------------------------- 
-        // 외벽을 따라가는 방향 
-        // 
-        // Y축 기준으로 시계방향 
-        // -------------------------------------------------------- 
- 
-        Vector3 tangent = new Vector3( 
-            normal.z, 
-            0f, 
-            -normal.x 
-        ); 
- 
-        tangent.Normalize(); 
- 
- 
-        // -------------------------------------------------------- 
-        // 이동 
-        // -------------------------------------------------------- 
- 
-        Vector3 movement =  tangent * wallFollowSpeed * Time.deltaTime; 
- 
-        transform.position += movement; 
- 
- 
-        // Y 고정 
+        //시계방향
+        Vector3 clockwise = new Vector3(normal.z, 0f, -normal.x).normalized;  
+        //다음 위치
+        Vector3 movement = clockwise * wallFollowSpeed * Time.deltaTime; 
+        transform.position += movement;//이동
+        // ========================================
+        // 장애물에서 일정한 거리 유지
         Vector3 newPosition = transform.position; 
         newPosition.y = 0f; 
- 
- 
-        // -------------------------------------------------------- 
-        // 장애물에서 일정한 거리 유지 
-        // -------------------------------------------------------- 
- 
-        Vector3 newClosest = 
-            obstacle.ClosestPoint(newPosition); 
- 
+        Vector3 newClosest = ClosestObstaclePoint(newPosition); 
         newClosest.y = 0f; 
- 
-        Vector3 outward = 
-            newPosition - newClosest; 
- 
+        Vector3 outward = newPosition - newClosest; 
         outward.y = 0f; 
- 
         if (outward.sqrMagnitude > 0.0001f) 
         { 
-            outward.Normalize(); 
- 
-            newPosition = 
-                newClosest + outward * wallDistance; 
-        } 
- 
-        newPosition.y = 0f; 
- 
-        transform.position = newPosition; 
- 
- 
-        // -------------------------------------------------------- 
-        // 이동 거리 누적 
-        // -------------------------------------------------------- 
- 
-        wallTravelDistance += movement.magnitude; 
- 
- 
-        // -------------------------------------------------------- 
-        // 현재 위치가 목표에 얼마나 가까운지 검사 
-        // -------------------------------------------------------- 
- 
-        float distanceToGoal = 
-            DistanceXZ(transform.position, goal.position); 
- 
+            outward.Normalize();
+            newPosition = newClosest + outward * wallDistance; 
+        }
+        newPosition.y = 0f;
+        transform.position = newPosition;//거리 유지
+
+        //이탈지점 갱신
+        float distanceToGoal = DistanceXZ(transform.position, goal.position); 
         if (distanceToGoal < bestDistance) 
         { 
             bestDistance = distanceToGoal; 
             bestPoint = transform.position; 
         } 
- 
- 
-        // -------------------------------------------------------- 
-        // BUG1: 
-        // 충분히 이동한 뒤 처음 충돌 지점 근처로 돌아오면 
-        // 한 바퀴 돌았다고 판단 
-        // -------------------------------------------------------- 
- 
+
+        //충돌점 도달 판정
+        wallTravelDistance += movement.magnitude;
         if (wallTravelDistance > 1f) 
-        { 
-            float distanceFromStart = 
-                DistanceXZ(transform.position, ContactPoint); 
- 
-            bool hasReturnedToStart = distanceFromStart < returnDistance; 
-            bool hasSameTravelDirection = 
-                Vector3.Dot(tangent, initialTangent) > 0f; 
- 
+        {
+            float distanceFromStart = DistanceXZ(transform.position, ContactPoint);
+            bool hasReturnedToStart = distanceFromStart < returnDistance;
+            bool hasSameTravelDirection = Vector3.Dot(clockwise, initialTangent) > 0f;
             if (hasReturnedToStart && hasSameTravelDirection) 
-            { 
-                state = State.ToWallBestPoint; 
+            {
+                state = State.ToWallBestPoint;
             } 
         } 
     } 
- 
- 
-    // ============================================================ 
-    // 장애물 외벽에서 찾은 최적 지점으로 이동 
-    // ============================================================ 
- 
+    //이탈 지점으로
     void ToWallBestPoint() 
     { 
-        Vector3 direction = bestPoint - transform.position;  
-        direction.y = 0f; 
- 
-        float distance = direction.magnitude; 
- 
-        if (distance < 0.05f) 
+        if (!HasObstacles()) 
         { 
             state = State.MoveToGoal; 
-            obstacle = null; 
             return; 
-        } 
- 
-        direction.Normalize(); 
- 
-        transform.position += 
-            direction * speed * Time.deltaTime; 
- 
-        Vector3 pos = transform.position; 
-        pos.y = 0f; 
- 
-        transform.position = pos; 
+        }
+        // 현재 위치
+        Vector3 currentPosition = transform.position;
+        currentPosition.y = 0f;
+        // 다음 예상 위치
+        Vector3 closestPoint = ClosestObstaclePoint(currentPosition);
+        closestPoint.y = 0f;
+        // 다음 에상 위치로의 벡터
+        Vector3 normal = currentPosition - closestPoint;
+        normal.y = 0f;
+        if (normal.sqrMagnitude < 0.0001f){normal = Vector3.right;}
+        normal.Normalize();
+        // 반시계방향
+        Vector3 anitclockwise = new Vector3(-normal.z, 0f, normal.x).normalized;
+        transform.position += anitclockwise * wallFollowSpeed * Time.deltaTime;//이동
+        //거리 유지
+        Vector3 newPosition = transform.position;
+        newPosition.y = 0f;
+        Vector3 newClosest = ClosestObstaclePoint(newPosition);
+        newClosest.y = 0f;
+        Vector3 outward = newPosition - newClosest;
+        outward.y = 0f;
+        if (outward.sqrMagnitude > 0.0001f)
+        {
+            outward.Normalize();
+            newPosition = newClosest + outward * wallDistance;
+        }
+        transform.position = newPosition;
+
+        if (DistanceXZ(transform.position, bestPoint) < 0.05f)
+        {
+            state = State.MoveToGoal;
+            obstacles.Clear();
+        }
     } 
+
     //충돌
     private void OnCollisionEnter(Collision collision) 
     { 
-        if (state != State.MoveToGoal) 
+        if (state != State.MoveToGoal || collision == null || collision.collider == null) 
             return; 
  
-        obstacle = collision.collider; 
+        obstacles.Clear();
+        Transform obstacleRoot = collision.collider.transform.parent != null
+            ? collision.collider.transform.parent
+            : collision.collider.transform;
+        obstacles.AddRange(obstacleRoot.GetComponentsInChildren<Collider>());
  
-        if (goal == null || obstacle == null) 
+        if (goal == null || !HasObstacles()) 
             return; 
  
         Vector3 contactPoint = 
@@ -276,29 +214,45 @@ public class Bug1 : MonoBehaviour
         if (contactNormal.sqrMagnitude < 0.0001f) 
             contactNormal = Vector3.right; 
  
-        contactNormal.Normalize(); 
-        initialTangent = new Vector3( 
-            contactNormal.z, 
-            0f, 
-            -contactNormal.x 
-        ).normalized; 
- 
+        contactNormal.Normalize();
+
+        // 충돌 초기값
+        initialTangent = new Vector3(contactNormal.z, 0f, -contactNormal.x).normalized;
         bestPoint = contactPoint; 
- 
-        bestDistance = 
-            DistanceXZ(contactPoint, goal.position); 
- 
+        bestDistance = DistanceXZ(contactPoint, goal.position); 
         wallTravelDistance = 0f; 
- 
         state = State.FollowWall; 
     } 
- 
+
+    private bool HasObstacles()
+    {
+        obstacles.RemoveAll(collider => collider == null || !collider.enabled);
+        return obstacles.Count > 0;
+    }
+
+    private Vector3 ClosestObstaclePoint(Vector3 position)
+    {
+        Vector3 closestPoint = obstacles[0].ClosestPoint(position);
+        float closestSqrDistance = (closestPoint - position).sqrMagnitude;
+
+        for (int index = 1; index < obstacles.Count; index++)
+        {
+            Vector3 candidate = obstacles[index].ClosestPoint(position);
+            float candidateSqrDistance = (candidate - position).sqrMagnitude;
+            if (candidateSqrDistance < closestSqrDistance)
+            {
+                closestPoint = candidate;
+                closestSqrDistance = candidateSqrDistance;
+            }
+        }
+
+        return closestPoint;
+    }
  
     float DistanceXZ(Vector3 a, Vector3 b) 
     { 
         a.y = 0f; 
         b.y = 0f; 
- 
         return Vector3.Distance(a, b); 
     } 
 }
