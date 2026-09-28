@@ -1,11 +1,13 @@
 using System.Collections.Generic;
 using UnityEngine; 
+using UnityEngine.InputSystem;
  
 public class Bug1 : MonoBehaviour 
 { 
-    [Header("Movement")] 
-    public Transform goal; 
-    public float speed = 5f; 
+    [Header("Movement")]
+    public Transform goal;
+    public float speed = 5f;
+    public float goalReachedDistance = 0.1f;
  
     [Header("Wall Following")] 
     public float wallDistance = 0.25f; 
@@ -20,7 +22,8 @@ public class Bug1 : MonoBehaviour
         ToWallBestPoint 
     } 
  
-    private State state = State.MoveToGoal; 
+    private State state = State.Stop; 
+    private State stateBeforeStop = State.MoveToGoal;
     // ========================================
     private readonly List<Collider> obstacles = new List<Collider>();
     private Vector3 ContactPoint;//충돌 위치
@@ -30,22 +33,29 @@ public class Bug1 : MonoBehaviour
     private float wallTravelDistance;//충돌 지점 도착 판정
     private Vector3 initialTangent;//충돌 지점에서 시계방향
     private float returnDistance = 0.25f;//충돌 지점까지 거리 조건
+    private Rigidbody rigidBody;
 
-    void Start() 
-    { 
-         
-    }  
+    void Start()
+    {
+        rigidBody = GetComponent<Rigidbody>();
+    }
     void Update() 
     { 
+        if (Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame)
+            ToggleMovementState();
+
         if (goal == null) 
             return; 
  
         Vector3 pos = transform.position;
         pos.y = 0f;
         transform.position = pos;
- 
-        switch (state) 
-        { 
+
+        if (DistanceXZ(transform.position, goal.position) <= goalReachedDistance)
+            EnterStop();
+
+        switch (state)
+        {
             case State.Stop:
                 break;
             case State.MoveToGoal: 
@@ -59,16 +69,44 @@ public class Bug1 : MonoBehaviour
                 break;
         } 
     } 
- 
-    void MoveToGoal() 
-    { 
-        Vector3 direction = goal.position - transform.position; 
- 
-        direction.y = 0f; 
- 
-        if (direction.sqrMagnitude < 0.01f) 
-            return; 
- 
+
+    private void ToggleMovementState()
+    {
+        if (state == State.Stop)
+        {
+            state = stateBeforeStop;
+            return;
+        }
+
+        stateBeforeStop = state;
+        EnterStop();
+    }
+
+    // Stop으로 전환하면서 Rigidbody에 남은 속도를 지운다.
+    // 안 지우면 물리 충돌로 쌓인 속도 때문에 스크립트가 멈춘 뒤에도 조금씩 계속 움직인다.
+    private void EnterStop()
+    {
+        state = State.Stop;
+        if (rigidBody == null)
+            return;
+
+        rigidBody.linearVelocity = Vector3.zero;
+        rigidBody.angularVelocity = Vector3.zero;
+    }
+
+    public void ResetToStop()
+    {
+        EnterStop();
+        stateBeforeStop = State.MoveToGoal;
+        obstacles.Clear();
+    }
+
+    void MoveToGoal()
+    {
+        Vector3 direction = goal.position - transform.position;
+
+        direction.y = 0f;
+
         direction.Normalize();
  
         transform.position += direction * speed * Time.deltaTime; 

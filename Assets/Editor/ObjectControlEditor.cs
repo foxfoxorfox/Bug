@@ -16,6 +16,12 @@ public class ObjectControlEditor : Editor
         controller.colliderEnabled =
             EditorGUILayout.Toggle("Collider 활성화", controller.colliderEnabled);
 
+        controller.bugPoint =
+            (Transform)EditorGUILayout.ObjectField("Bug 위치", controller.bugPoint, typeof(Transform), true);
+
+        controller.goalPoint =
+            (Transform)EditorGUILayout.ObjectField("Goal 위치", controller.goalPoint, typeof(Transform), true);
+
         if (EditorGUI.EndChangeCheck())
         {
             controller.ApplySettings();
